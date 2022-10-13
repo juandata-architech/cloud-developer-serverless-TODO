@@ -1,17 +1,36 @@
-# TODO: Change the name of the org 
-org: sudkul
+org: juandatorres
 app: serverless-todo-app
 service: serverless-todo-app
 
+frameworkVersion: "3"
 plugins:
   - serverless-webpack
   - serverless-iam-roles-per-function
   - serverless-plugin-tracing
+  - serverless-plugin-aws-alerts
+  - serverless-plugin-metric
+custom:
+  tableName: "users-table-${sls:stage}"
+  metrics:
+    - name: AppLevelMetrics
+      pattern: "{ $.statusCode != 200 }"
+  alerts:
+    stages:
+      - dev
+    topics:
+      alarm:
+        topic: ${self:provider.stage}-alerts-alarm
+        notifications:
+          - protocol: email
+            endpoint: beastar457@gmail.com
+    alarms:
+      - functionErrors
+      - functionThrottles
 
 provider:
   name: aws
-  runtime: nodejs12.x
-  lambdaHashingVersion: '20201221'
+  runtime: nodejs14.x
+  lambdaHashingVersion: "20201221"
 
   stage: ${opt:stage, 'dev'}
   region: ${opt:region, 'us-east-1'}
@@ -23,6 +42,7 @@ provider:
   # Use these variables in the functions and resouorces section below. For example, 
   # ${self:provider.environment.ATTACHMENT_S3_BUCKET}
   environment:
+    USERS_TABLE: ${self:custom.tableName}
     TODOS_TABLE: Todos-${self:provider.stage}
     TODOS_CREATED_AT_INDEX: CreatedAtIndex
     ATTACHMENT_S3_BUCKET: serverless-c4-todo-images-${self:provider.stage}
@@ -32,25 +52,12 @@ provider:
     # Enable API Gateway logs
     restApi: true
 
-  iam:
-    role:
-      statements:
-        - Effect: Allow
-          Action:
-            - xray:PutTelemetryRecords
-            - xray:PutTraceSegments
-          Resource: "*"
-
-
 functions:
-
   Auth:
     handler: src/lambda/auth/auth0Authorizer.handler
-
-  # TODO: Configure this function - 
-  # Provide iamRoleStatements property for performing Actions on DynamoDB
   GetTodos:
     handler: src/lambda/http/getTodos.handler
+    tracing: "true" # overrides provider settings (opt out)
     events:
       - http:
           method: get
@@ -58,48 +65,101 @@ functions:
           cors: true
           authorizer: Auth
 
-  # TODO: Configure this function - 
-  # Provide iamRoleStatements property. Decide the Actions and AWS Resource. 
-  # To refer to an AWS resource defined in the "Resources" section, you can use "Resource: !GetAtt <resource-name>.Arn"
-  # To validate incoming HTTP requests, we have provided the request schemas in function definition below. 
+    iamRoleStatements:
+      - Effect: Allow
+        Action:
+          - dynamodb:Query
+          - xray:PutTraceSegments
+          - xray:PutTelemetryRecords
+        Resource:
+          - arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.TODOS_TABLE}
+          - "*"
   CreateTodo:
     handler: src/lambda/http/createTodo.handler
+    tracing: "true" # overrides provider settings (opt out)
     events:
       - http:
           method: post
           path: todos
-          cors: true
-          authorizer: Auth
           request:
             schemas:
               application/json: ${file(models/create-todo-model.json)}
+          authorizer: Auth
+          cors: true
 
-  # TODO: Configure this function
-  # Provide property for setting up CORS, Authorizer, iamRoleStatements, and request schemas
+    iamRoleStatements:
+      - Effect: Allow
+        Action:
+          - dynamodb:PutObject
+          - dynamodb:PutItem
+          - xray:PutTraceSegments
+          - xray:PutTelemetryRecords
+        Resource:
+          - arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.TODOS_TABLE}
+          - "*"
+
   UpdateTodo:
     handler: src/lambda/http/updateTodo.handler
+    tracing: "true" # overrides provider settings (opt out)
     events:
       - http:
           method: patch
           path: todos/{todoId}
+          request:
+            schemas:
+              application/json: ${file(models/update-todo-model.json)}
+          cors: true
+          authorizer: Auth
 
-  # TODO: Configure this function
-  # Provide property for setting up CORS, Authorizer, iamRoleStatements
+    iamRoleStatements:
+      - Effect: Allow
+        Action:
+          - dynamodb:UpdateItem
+          - xray:PutTraceSegments
+          - xray:PutTelemetryRecords
+        Resource:
+          - arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.TODOS_TABLE}
+          - "*"
   DeleteTodo:
     handler: src/lambda/http/deleteTodo.handler
+    tracing: "true" # overrides provider settings (opt out)
     events:
       - http:
           method: delete
           path: todos/{todoId}
+          cors: true
 
-  # TODO: Configure this function
-  # Provide property for setting up CORS, Authorizer, iamRoleStatements
+    iamRoleStatements:
+      - Effect: Allow
+        Action:
+          - dynamodb:DeleteItem
+          - xray:PutTraceSegments
+          - xray:PutTelemetryRecords
+        Resource:
+          - arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.TODOS_TABLE}
+          - "*"
   GenerateUploadUrl:
     handler: src/lambda/http/generateUploadUrl.handler
+    tracing: "true" # overrides provider settings (opt out)
     events:
       - http:
           method: post
-          path: todos/{todoId}/attachment
+          path: todos/attachment
+          cors: true
+          authorizer: Auth
+
+    iamRoleStatements:
+      - Effect: Allow
+        Action:
+          - dynamodb:PutObject
+          - dynamodb:PutItem
+          - dynamodb:Query
+          - dynamodb:UpdateItem
+          - xray:PutTraceSegments
+          - xray:PutTelemetryRecords
+        Resource:
+          - arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.TODOS_TABLE}
+          - "*"
 
 resources:
   Resources:
