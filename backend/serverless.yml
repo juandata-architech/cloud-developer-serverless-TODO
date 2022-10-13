@@ -163,26 +163,73 @@ functions:
 
 resources:
   Resources:
-    # Add necessary AWS resources. You will need at least the following AWS resources
-    # TODO: Fill the properties
-    # Feel free to change the names as you like. 
     GatewayResponseDefault4XX:
-      Type: AWS::ApiGateway::GatewayResponse
+      Type: "AWS::ApiGateway::GatewayResponse"
       Properties:
-    
-    # TODO: Create a DynamoDB table with local secondary index and a composite key
+        ResponseParameters:
+          gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
+          gatewayresponse.header.Access-Control-Allow-Headers: "'*'"
+        ResponseType: DEFAULT_4XX
+        RestApiId:
+          Ref: "ApiGatewayRestApi"
     TodosTable:
       Type: AWS::DynamoDB::Table
       Properties:
-
-    # TODO: Complete the bucket properties below. 
-    # Do not forget to add the CorsConfiguration propoerty
+        AttributeDefinitions:
+          - AttributeName: refKey
+            AttributeType: S
+          - AttributeName: todoId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: refKey
+            KeyType: HASH
+          - AttributeName: todoId
+            KeyType: RANGE
+        BillingMode: PAY_PER_REQUEST
+        TableName: ${self:provider.environment.TODOS_TABLE}
+        LocalSecondaryIndexes:
+          - IndexName: ${self:provider.environment.TODOS_CREATED_AT_INDEX}
+            KeySchema:
+              - AttributeName: refKey
+                KeyType: HASH
+              - AttributeName: todoId
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL # What attributes will be copied to an index
     AttachmentsBucket:
       Type: AWS::S3::Bucket
       Properties:
+        BucketName: attachementseou7xk8j16a4
+        # AccessControl: PublicRead
+        CorsConfiguration:
+          CorsRules:
+            - AllowedHeaders:
+                - "*"
+              AllowedMethods:
+                - GET
+                - PUT
+                - POST
+                - DELETE
+                - HEAD
+              AllowedOrigins:
+                - "*"
+              MaxAge: 3000
 
-    # TODO: Complete the policy below and attach it to the bucket defined above
-    # For cross referencing the name of the bucket, use "!Ref AttachmentsBucket"
-    BucketPolicy:
+    UploadRole:
       Type: AWS::S3::BucketPolicy
       Properties:
+        Bucket: !Ref AttachmentsBucket
+        PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Action:
+                - "s3:GetObject"
+                - "s3:PutObjectAcl"
+                - "s3:PutObject"
+              Effect: Allow
+              Resource: !Join
+                - ""
+                - - "arn:aws:s3:::"
+                  - !Ref AttachmentsBucket
+                  - /*
+              Principal: "*"
